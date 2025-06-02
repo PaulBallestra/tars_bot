@@ -1,4 +1,3 @@
-// internal/ai/openai/tts.go
 package openai
 
 import (
@@ -10,15 +9,15 @@ import (
 	"net/http"
 )
 
-type TTS struct {
+type TTSClient struct {
 	apiKey string
 }
 
-func NewTTS(apiKey string) *TTS {
-	return &TTS{apiKey: apiKey}
+func NewTTSClient(apiKey string) *TTSClient {
+	return &TTSClient{apiKey: apiKey}
 }
 
-func (t *TTS) GenerateSpeech(ctx context.Context, text string) ([]byte, error) {
+func (t *TTSClient) Generate(ctx context.Context, text string) ([]byte, error) {
 	url := "https://api.openai.com/v1/audio/speech"
 
 	reqBody := map[string]interface{}{

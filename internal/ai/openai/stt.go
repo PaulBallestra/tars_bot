@@ -1,4 +1,3 @@
-// internal/ai/openai/stt.go
 package openai
 
 import (
@@ -11,22 +10,22 @@ import (
 	"net/http"
 )
 
-type STT struct {
+type STTClient struct {
 	apiKey string
 }
 
-func NewSTT(apiKey string) *STT {
-	return &STT{apiKey: apiKey}
+func NewSTTClient(apiKey string) *STTClient {
+	return &STTClient{apiKey: apiKey}
 }
 
-func (s *STT) Transcribe(ctx context.Context, audioData []byte) (string, error) {
+func (s *STTClient) Transcribe(ctx context.Context, audioData []byte) (string, error) {
 	url := "https://api.openai.com/v1/audio/transcriptions"
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
 	// Create form file field
-	part, err := writer.CreateFormFile("file", "audio.mp3")
+	part, err := writer.CreateFormFile("file", "audio.ogg")
 	if err != nil {
 		return "", fmt.Errorf("failed to create form file: %w", err)
 	}

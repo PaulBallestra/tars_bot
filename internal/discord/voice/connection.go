@@ -11,6 +11,11 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+var (
+	activeConnections = make(map[string]*VoiceConnection)
+	connectionsMutex  sync.Mutex
+)
+
 type VoiceConnection struct {
 	Session         *discordgo.Session
 	GuildID         string
@@ -23,11 +28,6 @@ type VoiceConnection struct {
 	Cancel          context.CancelFunc
 	Mutex           sync.Mutex
 }
-
-var (
-	activeConnections = make(map[string]*VoiceConnection)
-	connectionsMutex  sync.Mutex
-)
 
 func NewVoiceConnection(s *discordgo.Session, guildID, channelID string, agent *ai.AIAgent) (*VoiceConnection, error) {
 	connectionsMutex.Lock()
@@ -60,7 +60,7 @@ func (vc *VoiceConnection) Connect() error {
 		return errors.New("already connected")
 	}
 
-	// Join voice channel
+	// Join voice channel with proper settings
 	voiceConn, err := vc.Session.ChannelVoiceJoin(vc.GuildID, vc.ChannelID, false, true)
 	if err != nil {
 		return err
@@ -72,7 +72,11 @@ func (vc *VoiceConnection) Connect() error {
 	go vc.AudioReceiver.Start()
 
 	// Initialize audio sender
-	vc.AudioSender = NewAudioSender(vc)
+	vc.AudioSender, err = NewAudioSender(vc)
+	if err != nil {
+		vc.VoiceConnection.Disconnect()
+		return err
+	}
 	go vc.AudioSender.Start()
 
 	return nil

@@ -2,13 +2,16 @@ package voice
 
 import (
 	"bytes"
-	"io"
 	"log"
+	"sync"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 type AudioReceiver struct {
 	Connection *VoiceConnection
 	Buffer     bytes.Buffer
+	Mutex      sync.Mutex
 }
 
 func NewAudioReceiver(vc *VoiceConnection) *AudioReceiver {
@@ -20,49 +23,40 @@ func NewAudioReceiver(vc *VoiceConnection) *AudioReceiver {
 func (ar *AudioReceiver) Start() {
 	log.Println("Starting audio receiver")
 
-	// Configure voice connection
+	opusBuffer := make([]byte, 0, 20*960) // Buffer for 20ms chunks at 48kHz
+	opusChan := make(chan *discordgo.Packet, 10)
+
+	// Start receiving packets
+	// ar.Connection.VoiceConnection.Receiving = true
 	ar.Connection.VoiceConnection.Speaking(true)
 	defer ar.Connection.VoiceConnection.Speaking(false)
 
-	// Create a buffer for audio data
-	buffer := make([][]byte, 0)
+	// Set up packet receiver
+	// ar.Connection.VoiceConnection.ReceiveHandler = func(pc *discordgo.Packet) {
+	// 	opusChan <- pc
+	// }
 
-	// Receive audio packets
 	for {
 		select {
 		case <-ar.Connection.Context.Done():
 			return
-		default:
-			packet, err := ar.Connection.VoiceConnection.Receive()
-			if err != nil {
-				if err == io.EOF {
-					return
-				}
-				log.Printf("Error receiving audio packet: %v", err)
-				continue
-			}
+		case packet := <-opusChan:
+			ar.Mutex.Lock()
+			opusBuffer = append(opusBuffer, packet.Opus...)
+			ar.Mutex.Unlock()
 
-			// Process the audio packet
-			buffer = append(buffer, packet.Opus)
-			ar.processAudio(buffer)
-			buffer = buffer[:0] // Reset buffer
+			// Process when we have enough data (20ms chunks)
+			if len(opusBuffer) >= 960 {
+				ar.processAudioChunk(opusBuffer)
+				opusBuffer = opusBuffer[:0] // Reset buffer
+			}
 		}
 	}
 }
 
-func (ar *AudioReceiver) processAudio(buffer [][]byte) {
-	// Combine audio packets
-	opusData := bytes.Join(buffer, []byte{})
-
-	// Convert Opus to PCM (simplified - in production you'd use a proper decoder)
-	pcmData, err := opusToPCM(opusData)
-	if err != nil {
-		log.Printf("Error converting Opus to PCM: %v", err)
-		return
-	}
-
+func (ar *AudioReceiver) processAudioChunk(opusData []byte) {
 	// Send to STT
-	text, err := ar.Connection.Agent.STT.Transcribe(ar.Connection.Context, pcmData)
+	text, err := ar.Connection.Agent.STT.Transcribe(ar.Connection.Context, opusData)
 	if err != nil {
 		log.Printf("Error transcribing audio: %v", err)
 		return
@@ -81,23 +75,6 @@ func (ar *AudioReceiver) processAudio(buffer [][]byte) {
 		return
 	}
 
-	// Store conversation in vector database
-	err = ar.Connection.Agent.Memory.StoreConversation("voice-user", text, response)
-	if err != nil {
-		log.Printf("Error storing conversation: %v", err)
-	}
-
 	// Send response to TTS
 	ar.Connection.AudioSender.QueueResponse(response)
-}
-
-// Simplified Opus to PCM conversion (in production use a proper library)
-func opusToPCM(opusData []byte) ([]byte, error) {
-	// This is a placeholder - in production you would:
-	// 1. Use a proper Opus decoder
-	// 2. Convert to PCM format expected by your STT service
-	// 3. Handle sample rates and channels properly
-
-	// For testing, we'll just return the raw data
-	return opusData, nil
 }

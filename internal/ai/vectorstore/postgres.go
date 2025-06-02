@@ -3,26 +3,12 @@ package vectorstore
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/lib/pq"
 )
 
 type PostgreSQLVectorStore struct {
 	pool *pgxpool.Pool
-}
-
-type Conversation struct {
-	ID        int64
-	GuildID   string
-	UserID    string
-	SessionID string
-	Message   string
-	Response  string
-	Embedding []float32
-	CreatedAt time.Time
-	UpdatedAt time.Time
 }
 
 func NewPostgreSQLVectorStore(connString string) (*PostgreSQLVectorStore, error) {
@@ -62,9 +48,9 @@ func initializeDatabase(pool *pgxpool.Pool) error {
 	_, err = pool.Exec(context.Background(), `
         CREATE TABLE IF NOT EXISTS conversations (
             id BIGSERIAL PRIMARY KEY,
-            guild_id VARCHAR(255) NOT NULL,
+            guild_id VARCHAR(255),
             user_id VARCHAR(255) NOT NULL,
-            session_id VARCHAR(255) NOT NULL,
+            session_id VARCHAR(255),
             message TEXT NOT NULL,
             response TEXT NOT NULL,
             embedding vector(1536),
@@ -88,16 +74,15 @@ func initializeDatabase(pool *pgxpool.Pool) error {
 	return nil
 }
 
-func (vs *PostgreSQLVectorStore) StoreConversation(ctx context.Context, guildID, userID, sessionID, message, response string, embedding []float32) error {
+func (vs *PostgreSQLVectorStore) StoreConversation(
+	ctx context.Context,
+	guildID, userID, sessionID, message, response string,
+	embedding []float32,
+) error {
 	query := `
         INSERT INTO conversations
         (guild_id, user_id, session_id, message, response, embedding)
         VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (guild_id, user_id, session_id, message)
-        DO UPDATE SET
-            response = EXCLUDED.response,
-            embedding = EXCLUDED.embedding,
-            updated_at = NOW()
     `
 
 	_, err := vs.pool.Exec(ctx, query, guildID, userID, sessionID, message, response, embedding)
@@ -108,18 +93,23 @@ func (vs *PostgreSQLVectorStore) StoreConversation(ctx context.Context, guildID,
 	return nil
 }
 
-func (vs *PostgreSQLVectorStore) SearchSimilar(ctx context.Context, guildID, userID string, queryEmbedding []float32, limit int) ([]Conversation, error) {
+func (vs *PostgreSQLVectorStore) SearchSimilar(
+	ctx context.Context,
+	guildID, userID string,
+	embedding []float32,
+	limit int,
+) ([]Conversation, error) {
 	query := `
         SELECT id, guild_id, user_id, session_id, message, response, embedding, created_at, updated_at
         FROM conversations
-        WHERE guild_id = $1 AND user_id = $2
-        ORDER BY embedding <=> $3
-        LIMIT $4
+        WHERE user_id = $1
+        ORDER BY embedding <=> $2
+        LIMIT $3
     `
 
-	rows, err := vs.pool.Query(ctx, query, guildID, userID, pq.Array(queryEmbedding), limit)
+	rows, err := vs.pool.Query(ctx, query, userID, embedding, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search conversations: %w", err)
+		return nil, fmt.Errorf("failed to search similar conversations: %w", err)
 	}
 	defer rows.Close()
 

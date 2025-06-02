@@ -2,85 +2,73 @@ package ai
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"sync"
-
 	"tars-bot/internal/ai/openai"
 	"tars-bot/internal/ai/vectorstore"
 )
 
 type AIAgent struct {
-	Memory         *Memory
-	STT            *openai.STT
-	TTS            *openai.TTS
-	VectorStore    *vectorstore.PostgreSQLVectorStore
-	EmbeddingModel *openai.EmbeddingModel
-	Mutex          sync.Mutex
+	Chat   *openai.ChatClient
+	STT    *openai.STTClient
+	TTS    *openai.TTSClient
+	Memory *vectorstore.PostgreSQLVectorStore
 }
 
-func NewAIAgent(apiKey, dbConnString string) (*AIAgent, error) {
+func NewAIAgent(openAIKey, postgresConnString string) (*AIAgent, error) {
+	// Initialize OpenAI clients
+	chatClient := openai.NewChatClient(openAIKey)
+	sttClient := openai.NewSTTClient(openAIKey)
+	ttsClient := openai.NewTTSClient(openAIKey)
+
 	// Initialize vector store
-	vectorStore, err := vectorstore.NewPostgreSQLVectorStore(dbConnString)
+	vectorStore, err := vectorstore.NewPostgreSQLVectorStore(postgresConnString)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize vector store: %w", err)
+		return nil, err
 	}
 
-	// Initialize embedding model
-	embeddingModel := openai.NewEmbeddingModel(apiKey)
-
 	return &AIAgent{
-		Memory:         NewMemory(),
-		STT:            openai.NewSTT(apiKey),
-		TTS:            openai.NewTTS(apiKey),
-		VectorStore:    vectorStore,
-		EmbeddingModel: embeddingModel,
+		Chat:   chatClient,
+		STT:    sttClient,
+		TTS:    ttsClient,
+		Memory: vectorStore,
 	}, nil
 }
 
 func (a *AIAgent) ProcessMessage(ctx context.Context, userID, message string) (string, error) {
-	a.Mutex.Lock()
-	defer a.Mutex.Unlock()
+	// Get relevant context from memory
+	embedding, err := a.Chat.CreateEmbedding(ctx, message)
+	if err != nil {
+		return "", err
+	}
 
-	// Get relevant context from vector store
-	embedding, err := a.EmbeddingModel.CreateEmbedding(ctx, message)
+	// Search for similar conversations
+	conversations, err := a.Memory.SearchSimilar(ctx, "", userID, embedding, 3)
+	if err != nil {
+		log.Printf("Error searching similar conversations: %v", err)
+	}
+
+	// Build context from past conversations
+	contextMessages := ""
+	for _, conv := range conversations {
+		contextMessages += "User: " + conv.Message + "\n" +
+			"Bot: " + conv.Response + "\n\n"
+	}
+
+	// Generate response with context
+	prompt := "Context from previous conversations:\n" + contextMessages +
+		"\nCurrent conversation:\nUser: " + message + "\nBot:"
+
+	response, err := a.Chat.Completion(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+
+	// Store the conversation
+	embedding, err = a.Chat.CreateEmbedding(ctx, message)
 	if err != nil {
 		log.Printf("Error creating embedding: %v", err)
-	}
-
-	var contextMessages []string
-	if embedding != nil {
-		conversations, err := a.VectorStore.SearchSimilar(ctx, "guild-id", userID, embedding, 3)
-		if err != nil {
-			log.Printf("Error searching similar conversations: %v", err)
-		}
-
-		for _, conv := range conversations {
-			contextMessages = append(contextMessages,
-				fmt.Sprintf("User: %s\nBot: %s", conv.Message, conv.Response))
-		}
-	}
-
-	// Combine with new message
-	prompt := fmt.Sprintf("Context:\n%s\n\nUser Message: %s", contextMessages, message)
-
-	// Call OpenAI API
-	response, err := openai.CallChatCompletion(ctx, prompt)
-	if err != nil {
-		return "", fmt.Errorf("failed to call OpenAI: %w", err)
-	}
-
-	// Store conversation in vector database
-	if embedding != nil {
-		err = a.VectorStore.StoreConversation(
-			ctx,
-			"guild-id",
-			userID,
-			"session-id",
-			message,
-			response,
-			embedding,
-		)
+	} else {
+		err = a.Memory.StoreConversation(ctx, "", userID, "", message, response, embedding)
 		if err != nil {
 			log.Printf("Error storing conversation: %v", err)
 		}
@@ -90,8 +78,8 @@ func (a *AIAgent) ProcessMessage(ctx context.Context, userID, message string) (s
 }
 
 func (a *AIAgent) Close() error {
-	if a.VectorStore != nil {
-		return a.VectorStore.Close()
+	if a.Memory != nil {
+		return a.Memory.Close()
 	}
 	return nil
 }

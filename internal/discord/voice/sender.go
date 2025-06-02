@@ -1,21 +1,36 @@
 package voice
 
 import (
+	"encoding/binary"
 	"log"
 	"sync"
+	"time"
+
+	"github.com/hraban/opus"
 )
 
 type AudioSender struct {
 	Connection *VoiceConnection
 	Queue      chan string
 	Mutex      sync.Mutex
+	Encoder    *opus.Encoder
 }
 
-func NewAudioSender(vc *VoiceConnection) *AudioSender {
+func NewAudioSender(vc *VoiceConnection) (*AudioSender, error) {
+	// Initialize Opus encoder with proper settings for Discord
+	encoder, err := opus.NewEncoder(48000, 2, opus.AppVoIP)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set bitrate to 64kbps which is good for voice
+	encoder.SetBitrate(64000)
+
 	return &AudioSender{
 		Connection: vc,
 		Queue:      make(chan string, 10),
-	}
+		Encoder:    encoder,
+	}, nil
 }
 
 func (as *AudioSender) Start() {
@@ -44,21 +59,21 @@ func (as *AudioSender) processText(text string) {
 	defer as.Mutex.Unlock()
 
 	// Generate audio from text
-	audioData, err := as.Connection.Agent.TTS.Generate(text)
+	audioData, err := as.Connection.Agent.TTS.Generate(as.Connection.Context, text)
 	if err != nil {
 		log.Printf("Error generating TTS: %v", err)
 		return
 	}
 
-	// Convert to Opus (simplified)
-	opusData, err := pcmToOpus(audioData)
+	// Convert to Opus
+	opusData, err := as.encodeToOpus(audioData)
 	if err != nil {
-		log.Printf("Error converting to Opus: %v", err)
+		log.Printf("Error encoding to Opus: %v", err)
 		return
 	}
 
 	// Send audio in chunks
-	chunkSize := 20 * 960 // 20ms chunks at 48kHz
+	chunkSize := 960 // 20ms chunks at 48kHz
 	for i := 0; i < len(opusData); i += chunkSize {
 		end := i + chunkSize
 		if end > len(opusData) {
@@ -67,23 +82,29 @@ func (as *AudioSender) processText(text string) {
 
 		chunk := opusData[i:end]
 		as.Connection.VoiceConnection.Speaking(true)
-		err := as.Connection.VoiceConnection.SendOpus(chunk)
-		if err != nil {
-			log.Printf("Error sending audio: %v", err)
-			return
-		}
+		as.Connection.VoiceConnection.OpusSend <- chunk
+		time.Sleep(20 * time.Millisecond) // Simulate real-time playback
 	}
 
 	as.Connection.VoiceConnection.Speaking(false)
 }
 
-// Simplified PCM to Opus conversion (in production use a proper library)
-func pcmToOpus(pcmData []byte) ([]byte, error) {
-	// This is a placeholder - in production you would:
-	// 1. Use a proper Opus encoder
-	// 2. Convert from PCM to Opus format
-	// 3. Handle sample rates and channels properly
+func (as *AudioSender) encodeToOpus(pcmData []byte) ([]byte, error) {
+	// Convert bytes to int16 samples
+	samples := make([]int16, len(pcmData)/2)
+	for i := 0; i < len(samples); i++ {
+		samples[i] = int16(binary.LittleEndian.Uint16(pcmData[i*2:]))
+	}
 
-	// For testing, we'll just return the raw data
-	return pcmData, nil
+	// Create buffer for Opus data
+	opusData := make([]byte, len(samples)*2) // Enough space for encoded data
+
+	// Encode to Opus
+	frameSize := len(samples) / 2 // 20ms frame size
+	encoded, err := as.Encoder.Encode(samples[:frameSize], opusData)
+	if err != nil {
+		return nil, err
+	}
+
+	return opusData[:encoded], nil
 }
