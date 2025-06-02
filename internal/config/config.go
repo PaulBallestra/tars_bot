@@ -8,9 +8,9 @@ import (
 )
 
 type Config struct {
-	DiscordToken string
-	OpenAIKey    string
-	GuildID      string // For command registration
+	DiscordToken       string
+	OpenAIKey          string
+	PostgresConnString string
 }
 
 func Load() *Config {
@@ -21,8 +21,8 @@ func Load() *Config {
 	}
 
 	return &Config{
-		DiscordToken: os.Getenv("DISCORD_TOKEN"),
-		OpenAIKey:    os.Getenv("OPENAI_API_KEY"),
-		GuildID:      os.Getenv("DISCORD_GUILD_ID"), // Optional for development
+		DiscordToken:       os.Getenv("DISCORD_TOKEN"),
+		OpenAIKey:          os.Getenv("OPENAI_API_KEY"),
+		PostgresConnString: os.Getenv("POSTGRES_CONN_STRING"),
 	}
 }

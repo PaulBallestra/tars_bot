@@ -15,8 +15,12 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
-	// Initialize AI agent
-	agent := ai.NewAIAgent(cfg.OpenAIKey)
+	// Initialize AI agent with PostgreSQL connection
+	agent, err := ai.NewAIAgent(cfg.OpenAIKey, os.Getenv("POSTGRES_CONN_STRING"))
+	if err != nil {
+		log.Fatalf("Failed to initialize AI agent: %v", err)
+	}
+	defer agent.Close()
 
 	// Initialize Discord bot
 	bot, err := discord.NewBot(cfg, agent)
@@ -29,9 +33,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to start bot: %v", err)
 	}
-	defer bot.Close()
+	defer bot.Session.Close()
 
-	log.Println("Tars Bot is now running. Press CTRL+C to exit.")
+	log.Println("Bot is now running. Press CTRL+C to exit.")
 
 	// Wait for termination signal
 	sc := make(chan os.Signal, 1)

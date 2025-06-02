@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"tars-bot/internal/discord/voice"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -14,8 +15,10 @@ func (b *Bot) interactionHandler(s *discordgo.Session, i *discordgo.InteractionC
 		switch i.ApplicationCommandData().Name {
 		case "chat":
 			b.handleChatCommand(s, i)
-		case "voice":
-			b.handleVoiceCommand(s, i)
+		case "join":
+			b.handleJoinCommand(s, i)
+		case "leave":
+			b.handleLeaveCommand(s, i)
 		}
 	}
 }
@@ -85,6 +88,109 @@ func (b *Bot) handleVoiceCommand(s *discordgo.Session, i *discordgo.InteractionC
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: "Voice command received! (Not yet implemented)",
+		},
+	})
+}
+
+func (b *Bot) handleJoinCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Check if user is in a voice channel
+	voiceState, err := s.State.VoiceState(i.GuildID, i.Member.User.ID)
+	if err != nil {
+		log.Printf("Error getting voice state: %v", err)
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Error getting your voice state",
+			},
+		})
+		return
+	}
+
+	if voiceState == nil || voiceState.ChannelID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "You need to be in a voice channel to use this command",
+			},
+		})
+		return
+	}
+
+	// Check if bot is already in a voice channel
+	if _, exists := voice.GetActiveConnection(i.GuildID); exists {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "I'm already in a voice channel",
+			},
+		})
+		return
+	}
+
+	// Create new voice connection
+	vc, err := voice.NewVoiceConnection(s, i.GuildID, voiceState.ChannelID, b.Agent)
+	if err != nil {
+		log.Printf("Error creating voice connection: %v", err)
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Error creating voice connection",
+			},
+		})
+		return
+	}
+
+	// Connect to voice channel
+	err = vc.Connect()
+	if err != nil {
+		log.Printf("Error connecting to voice channel: %v", err)
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Error connecting to voice channel",
+			},
+		})
+		return
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Joined voice channel!",
+		},
+	})
+}
+
+func (b *Bot) handleLeaveCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Check if bot is in a voice channel
+	conn, exists := voice.GetActiveConnection(i.GuildID)
+	if !exists {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "I'm not in a voice channel",
+			},
+		})
+		return
+	}
+
+	// Disconnect from voice channel
+	err := conn.Disconnect()
+	if err != nil {
+		log.Printf("Error disconnecting from voice channel: %v", err)
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Error disconnecting from voice channel",
+			},
+		})
+		return
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Left voice channel!",
 		},
 	})
 }

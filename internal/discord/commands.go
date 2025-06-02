@@ -1,41 +1,45 @@
 package discord
 
 import (
+	"log"
+
 	"github.com/bwmarrin/discordgo"
 )
 
-var commands = []*discordgo.ApplicationCommand{
-	{
-		Name:        "chat",
-		Description: "Start a conversation with the AI",
-		Options: []*discordgo.ApplicationCommandOption{
-			{
-				Type:        discordgo.ApplicationCommandOptionString,
-				Name:        "message",
-				Description: "Your message to the AI",
-				Required:    true,
+func (b *Bot) registerCommands() error {
+	// Register global commands
+	commands := []*discordgo.ApplicationCommand{
+		{
+			Name:        "chat",
+			Description: "Chat with the AI",
+			Type:        discordgo.ChatApplicationCommand,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "message",
+					Description: "Your message to the AI",
+					Required:    true,
+				},
 			},
 		},
-	},
-	{
-		Name:        "voice",
-		Description: "Start a voice conversation with the AI",
-	},
-}
+		{
+			Name:        "join",
+			Description: "Join a voice channel",
+			Type:        discordgo.ChatApplicationCommand,
+		},
+		{
+			Name:        "leave",
+			Description: "Leave the voice channel",
+			Type:        discordgo.ChatApplicationCommand,
+		},
+	}
 
-func (b *Bot) registerCommands() error {
-	// Register guild commands for development
-	if b.Config.GuildID != "" {
-		_, err := b.Session.ApplicationCommandBulkOverwrite(b.Session.State.User.ID, b.Config.GuildID, commands)
+	// Register commands globally
+	registeredCommands, err := b.Session.ApplicationCommandBulkOverwrite(b.Session.State.User.ID, "", commands)
+	if err != nil {
 		return err
 	}
 
-	// Register global commands for production
-	for _, cmd := range commands {
-		_, err := b.Session.ApplicationCommandCreate(b.Session.State.User.ID, "", cmd)
-		if err != nil {
-			return err
-		}
-	}
+	log.Printf("Registered %d commands", len(registeredCommands))
 	return nil
 }
