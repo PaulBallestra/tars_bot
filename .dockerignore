@@ -1,0 +1,23 @@
+# Binaries
+/tars-bot
+
+# Git & VCS
+.git
+.gitignore
+
+# Env and config
+.env
+.env.*
+
+# OS / Editor noise
+.DS_Store
+*.swp
+*.swo
+*.tmp
+
+# Logs
+*.log
+
+# IDEs
+.vscode/
+.idea/

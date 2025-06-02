@@ -40,6 +40,9 @@ func (b *Bot) registerCommands() error {
 		return err
 	}
 
-	log.Printf("Registered %d commands", len(registeredCommands))
+	log.Printf(" Registered %d commands", len(registeredCommands))
+	for _, command := range registeredCommands {
+		log.Printf(" Command: %v", command)
+	}
 	return nil
 }
