@@ -1,3 +1,4 @@
+// internal/discord/voice/receiver.go
 package voice
 
 import (
@@ -26,21 +27,19 @@ func (ar *AudioReceiver) Start() {
 	opusBuffer := make([]byte, 0, 20*960) // Buffer for 20ms chunks at 48kHz
 	opusChan := make(chan *discordgo.Packet, 10)
 
-	// Start receiving packets
-	// ar.Connection.VoiceConnection.Receiving = true
+	// Enable receiving Opus packets
+	ar.Connection.VoiceConnection.OpusRecv = opusChan
 	ar.Connection.VoiceConnection.Speaking(true)
 	defer ar.Connection.VoiceConnection.Speaking(false)
-
-	// Set up packet receiver
-	// ar.Connection.VoiceConnection.ReceiveHandler = func(pc *discordgo.Packet) {
-	// 	opusChan <- pc
-	// }
 
 	for {
 		select {
 		case <-ar.Connection.Context.Done():
 			return
 		case packet := <-opusChan:
+			if packet == nil {
+				continue
+			}
 			ar.Mutex.Lock()
 			opusBuffer = append(opusBuffer, packet.Opus...)
 			ar.Mutex.Unlock()
@@ -63,6 +62,7 @@ func (ar *AudioReceiver) processAudioChunk(opusData []byte) {
 	}
 
 	if text == "" {
+		log.Println("Empty transcription received")
 		return
 	}
 

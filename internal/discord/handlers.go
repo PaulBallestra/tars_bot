@@ -116,6 +116,9 @@ func (b *Bot) handleJoinCommand(s *discordgo.Session, i *discordgo.InteractionCr
 		return
 	}
 
+	// Log channel ID for debugging
+	log.Printf("Attempting to join voice channel: %s", voiceState.ChannelID)
+
 	// Check if bot is already in a voice channel
 	if _, exists := voice.GetActiveConnection(i.GuildID); exists {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -147,7 +150,7 @@ func (b *Bot) handleJoinCommand(s *discordgo.Session, i *discordgo.InteractionCr
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Content: "Error connecting to voice channel",
+				Content: "Error connecting to voice channel: " + err.Error(),
 			},
 		})
 		return

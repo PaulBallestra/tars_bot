@@ -61,7 +61,7 @@ func (vc *VoiceConnection) Connect() error {
 	}
 
 	// Join voice channel with proper settings
-	voiceConn, err := vc.Session.ChannelVoiceJoin(vc.GuildID, vc.ChannelID, false, true)
+	voiceConn, err := vc.Session.ChannelVoiceJoin(vc.GuildID, vc.ChannelID, false, false)
 	if err != nil {
 		return err
 	}

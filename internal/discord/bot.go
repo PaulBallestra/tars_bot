@@ -22,7 +22,7 @@ func NewBot(cfg *config.Config, agent *ai.AIAgent) (*Bot, error) {
 	}
 
 	// Configure intents
-	session.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsGuildMessageReactions
+	session.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsGuildMessageReactions | discordgo.IntentsGuildVoiceStates
 
 	return &Bot{
 		Session: session,
