@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 )
@@ -19,6 +20,7 @@ func NewSTTClient(apiKey string) *STTClient {
 }
 
 func (s *STTClient) Transcribe(ctx context.Context, audioData []byte) (string, error) {
+	log.Printf("Sending %d bytes of audio data to STT API", len(audioData))
 	url := "https://api.openai.com/v1/audio/transcriptions"
 
 	body := &bytes.Buffer{}
@@ -59,6 +61,7 @@ func (s *STTClient) Transcribe(ctx context.Context, audioData []byte) (string, e
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("STT API request failed with status %d: %s", resp.StatusCode, string(body))
 		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -70,5 +73,6 @@ func (s *STTClient) Transcribe(ctx context.Context, audioData []byte) (string, e
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	log.Printf("Received transcription: %s", result.Text)
 	return result.Text, nil
 }

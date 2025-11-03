@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"time"
 
 	"tars-bot/internal/ai"
 
@@ -60,20 +61,57 @@ func (vc *VoiceConnection) Connect() error {
 		return errors.New("already connected")
 	}
 
-	// Join voice channel with proper settings
+	log.Printf("Attempting to join voice channel %s in guild %s", vc.ChannelID, vc.GuildID)
+
+	// Make sure we have proper intents set up
+	if vc.Session.Identify.Intents&discordgo.IntentsGuildVoiceStates == 0 {
+		log.Println("WARNING: Voice state intents are not enabled, adding them now")
+		vc.Session.Identify.Intents |= discordgo.IntentsGuildVoiceStates
+	}
+
+	// Join with both speaking and listening enabled (mute=false, deaf=false)
 	voiceConn, err := vc.Session.ChannelVoiceJoin(vc.GuildID, vc.ChannelID, false, false)
 	if err != nil {
+		log.Printf("Failed to join voice channel: %v", err)
 		return err
 	}
 	vc.VoiceConnection = voiceConn
 
+	log.Println("Successfully joined voice channel")
+	log.Printf("Voice connection ready state: %v", voiceConn.Ready)
+
+	// Wait for connection to stabilize
+	waitTime := 3 * time.Second
+	log.Printf("Waiting %v for voice connection to stabilize...", waitTime)
+	time.Sleep(waitTime)
+
+	// Check if we're actually in the voice channel
+	inVoiceChannel := false
+	guild, err := vc.Session.State.Guild(vc.GuildID)
+	if err == nil {
+		for _, vs := range guild.VoiceStates {
+			if vs.UserID == vc.Session.State.User.ID && vs.ChannelID == vc.ChannelID {
+				inVoiceChannel = true
+				log.Printf("Confirmed bot is in voice channel: %s", vc.ChannelID)
+				break
+			}
+		}
+	}
+
+	if !inVoiceChannel {
+		log.Printf("WARNING: Bot does not appear to be in the voice channel according to guild state")
+	}
+
 	// Initialize audio receiver
+	log.Println("Initializing audio receiver")
 	vc.AudioReceiver = NewAudioReceiver(vc)
 	go vc.AudioReceiver.Start()
 
 	// Initialize audio sender
+	log.Println("Initializing audio sender")
 	vc.AudioSender, err = NewAudioSender(vc)
 	if err != nil {
+		log.Printf("Error initializing audio sender: %v", err)
 		vc.VoiceConnection.Disconnect()
 		return err
 	}
